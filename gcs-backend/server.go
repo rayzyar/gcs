@@ -45,9 +45,10 @@ func main() {
 	// wire up CatchAll
 	r.NotFoundHandler = http.NotFoundHandler()
 	r.HandleFunc("/give", giveHandler).Methods("POST")
+	r.HandleFunc("/give/current", giveCurrentHandler).Methods("GET")
 	r.HandleFunc("/receive/register", receiveRegisterHandler).Methods("POST")
 	r.HandleFunc("/receive/list", receiveListHandler).Methods("GET")
-	r.HandleFunc("/receive/confirm", receiveConfirmHandler).Methods("PUT")
+	r.HandleFunc("/receive/confirm", receiveConfirmHandler).Methods("GET")
 	srv := &http.Server{
 		Handler: r,
 		Addr:    resthost,
@@ -97,6 +98,33 @@ func giveHandler(resp http.ResponseWriter, req *http.Request) {
 	resp.Write(outputData)
 	return
 
+}
+
+func giveCurrentHandler(resp http.ResponseWriter, req *http.Request) {
+	var body []byte
+	body, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		msg := fmt.Sprintf("failed to read request err:%s", err)
+		errResp(resp, msg)
+		return
+	}
+	defer req.Body.Close()
+	giveCurrentReq := &dto.GiveCurrentRequest{}
+	if err = json.Unmarshal(body, giveCurrentReq); err != nil {
+		msg := fmt.Sprintf("failed to read request err:%s", err)
+		errResp(resp, msg)
+		return
+	}
+	fmt.Println("req:", giveCurrentReq)
+	bdata := prebookdata.DaoV1.Get(giveCurrentReq.PreBookCode)
+	outputData, err := json.Marshal(bdata)
+	if err != nil {
+		msg := fmt.Sprintf("failed to generate prebook code err:%s", err)
+		errResp(resp, msg)
+	}
+	fmt.Println(string(outputData))
+	resp.WriteHeader(http.StatusOK)
+	resp.Write(outputData)
 }
 
 func handleReceiveRegisterDto(resp http.ResponseWriter, rcvRegReq *dto.ReceiveRegisterRequest) {

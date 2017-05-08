@@ -8,3 +8,8 @@ type GiveRequest struct {
 	WeightKG   float64 `json:"weight"`
 	ExpireTime int64   `json:"expire"`
 }
+
+type GiveCurrentRequest struct {
+	UserID      int64  `json:"userID"`
+	PreBookCode string `json:"preBookCode"`
+}

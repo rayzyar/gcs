@@ -3,7 +3,7 @@ package redisgeo
 import (
 	"errors"
 
-	redis "github.com/chasex/redis-go-cluster"
+	redis "github.com/garyburd/redigo/redis"
 )
 
 // GeoPoint Represents a Physical GeoPoint in geographic notation [lat, lng].
