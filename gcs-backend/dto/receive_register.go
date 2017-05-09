@@ -5,8 +5,8 @@ import "time"
 type ReceiveRegisterRequest struct {
 	CityID     int64   `json:"cityID"`
 	UserID     int64   `json:"userID"`
-	Lat        float64 `json:"latitude"`
 	Lng        float64 `json:"longitude"`
+	Lat        float64 `json:"latitude"`
 	Demand     float64 `json:"demand"` // amount of food, unit: one set of meal for one adult
 	TimeRanges []TimeRange
 }
@@ -21,8 +21,8 @@ var (
 		{
 			CityID: 1,
 			UserID: 1,
-			Lng:    1.29396,
-			Lat:    103.85334,
+			Lng:    103.85334,
+			Lat:    1.29396,
 			Demand: 20,
 			TimeRanges: []TimeRange{
 				{StartTime: 0, EndTime: 24 * time.Hour},
@@ -31,8 +31,8 @@ var (
 		{
 			CityID: 1,
 			UserID: 2,
-			Lng:    1.2973,
-			Lat:    103.85106,
+			Lng:    103.85106,
+			Lat:    1.2973,
 			Demand: 40,
 			TimeRanges: []TimeRange{
 				{StartTime: 0, EndTime: 24 * time.Hour},
@@ -41,8 +41,8 @@ var (
 		{
 			CityID: 1,
 			UserID: 3,
-			Lng:    1.29436,
-			Lat:    103.84903,
+			Lng:    103.84903,
+			Lat:    1.29436,
 			Demand: 20,
 			TimeRanges: []TimeRange{
 				{StartTime: 0, EndTime: 24 * time.Hour},
@@ -51,8 +51,8 @@ var (
 		{
 			CityID: 1,
 			UserID: 4,
-			Lng:    1.30483,
-			Lat:    103.82387,
+			Lng:    103.82387,
+			Lat:    1.30483,
 			Demand: 30,
 			TimeRanges: []TimeRange{
 				{StartTime: 0, EndTime: 24 * time.Hour},
@@ -61,8 +61,8 @@ var (
 		{
 			CityID: 1,
 			UserID: 5,
-			Lng:    1.32094,
-			Lat:    103.90547,
+			Lng:    103.90547,
+			Lat:    1.32094,
 			Demand: 10,
 			TimeRanges: []TimeRange{
 				{StartTime: 0, EndTime: 24 * time.Hour},
@@ -71,8 +71,8 @@ var (
 		{
 			CityID: 1,
 			UserID: 6,
-			Lng:    1.32064,
-			Lat:    103.91009,
+			Lng:    103.91009,
+			Lat:    1.32064,
 			Demand: 100,
 			TimeRanges: []TimeRange{
 				{StartTime: 0, EndTime: 24 * time.Hour},

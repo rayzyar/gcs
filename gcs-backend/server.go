@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -20,6 +21,7 @@ import (
 	geo "github.com/kellydunn/golang-geo"
 	"github.com/rayzyar/gcs/gcs-backend/dto"
 	"github.com/rayzyar/gcs/gcs-backend/prebookdata"
+	"github.com/rayzyar/gcs/pkg/email"
 	"github.com/rayzyar/gcs/pkg/redis"
 	"github.com/rayzyar/gcs/pkg/redisgeo"
 )
@@ -29,6 +31,7 @@ const (
 	resthost        = "172.16.2.114:8080"
 	distInfinity    = math.MaxInt64
 	KeybookingCount = "booking:count"
+	nearRadius      = 3
 )
 
 var center = geo.NewPoint(1.2966426, 103.7742052)
@@ -82,17 +85,29 @@ func giveHandler(resp http.ResponseWriter, req *http.Request) {
 		errResp(resp, msg)
 	}
 
-	bdata := prebookdata.PrebookData{
+	bdata := &prebookdata.PrebookData{
 		PreBookCode: pbCode,
+		Item:        giveReq.Item,
+		CityID:      giveReq.CityID,
 		State:       prebookdata.StateAllocating,
 		WeightKG:    giveReq.WeightKG,
+		PickUp:      geo.NewPoint(giveReq.Lat, giveReq.Lng),
 	}
+	prebookdata.DaoV1.StorePrebookData(bdata)
 
 	outputData, err := json.Marshal(bdata)
 	if err != nil {
 		msg := fmt.Sprintf("failed to generate prebook code err:%s", err)
 		errResp(resp, msg)
 	}
+
+	go func() {
+		err := allocate(bdata)
+		if err != nil {
+			fmt.Println("allocation failed err:", err)
+		}
+	}()
+
 	fmt.Println(string(outputData))
 	resp.WriteHeader(http.StatusCreated)
 	resp.Write(outputData)
@@ -100,23 +115,68 @@ func giveHandler(resp http.ResponseWriter, req *http.Request) {
 
 }
 
+func allocate(bdata *prebookdata.PrebookData) error {
+	loc := findNearestDemand(bdata)
+	if loc == nil {
+		return errors.New("not matched")
+	}
+	fmt.Printf("filtered loc:%#v\n", loc)
+	bdata.State = prebookdata.StateAllocated
+	bdata.DriverName = "Driver A"
+	bdata.DriverPhoneNumber = "+6593004400"
+	bdata.PlateNumber = ""
+	bdata.PickUpTime = time.Now().Add(time.Minute).UnixNano() / 1000
+	bdata.DemandID, _ = strconv.ParseInt(loc.Name[4:], 10, 64)
+	// should have been retrieved from DemandID
+	destEmail := "ray.zezhou@gmail.com"
+	email.Send(destEmail, "http://"+resthost+"/confirm/\n\n"+
+		"phone number: "+bdata.DriverPhoneNumber+"\n\n"+
+		"courier plate: "+bdata.PlateNumber+"\n\n"+
+		"pick up time: "+time.Unix(bdata.PickUpTime/int64(time.Millisecond), 0).Format(time.RFC822)+"\n\n"+
+		"driver: "+bdata.DriverName,
+	)
+	return nil
+}
+
+func findNearestDemand(bdata *prebookdata.PrebookData) *redisgeo.GeoLocation {
+	conn := rediscli.GetConn()
+	defer conn.Close()
+	locations, _ := redisgeo.GeoLocations(conn.Do("GEORADIUS", cityKey(bdata.CityID), bdata.PickUp.Lng(), bdata.PickUp.Lat(), nearRadius, "km", "WITHCOORD", "WITHDIST", "WITHHASH"))
+	loc := filter(conn, bdata.WeightKG, locations)
+	return loc
+}
+
+func filter(conn redis.Conn, weight float64, locations []*redisgeo.GeoLocation) *redisgeo.GeoLocation {
+	fmt.Printf("%d locations selected\n", len(locations))
+	for _, loc := range locations {
+		b, _ := redis.Bytes(conn.Do("GET", loc.Name))
+		var buffer = &bytes.Buffer{}
+		_, _ = buffer.Write(b)
+		var rcvRegReq = &dto.ReceiveRegisterRequest{}
+		dec := gob.NewDecoder(buffer)
+		dec.Decode(rcvRegReq)
+		fmt.Printf("demand weight:%f, requested weight:%f\n", rcvRegReq.Demand, weight)
+		if weight > rcvRegReq.Demand*0.6 && weight < rcvRegReq.Demand*1.5 {
+			fmt.Printf("loc:%#v, allocated\n", loc)
+			return loc
+		}
+		fmt.Printf("loc:%#v, filtered out\n", loc)
+	}
+	return nil
+}
+
 func giveCurrentHandler(resp http.ResponseWriter, req *http.Request) {
-	var body []byte
-	body, err := ioutil.ReadAll(req.Body)
+	values, err := url.ParseQuery(req.URL.RawQuery)
 	if err != nil {
-		msg := fmt.Sprintf("failed to read request err:%s", err)
-		errResp(resp, msg)
+		errResp(resp, "failed to parse url raw query err:%s", err)
 		return
 	}
-	defer req.Body.Close()
-	giveCurrentReq := &dto.GiveCurrentRequest{}
-	if err = json.Unmarshal(body, giveCurrentReq); err != nil {
-		msg := fmt.Sprintf("failed to read request err:%s", err)
-		errResp(resp, msg)
-		return
+
+	preBookCode := values.Get("preBookCode")
+	bdata, err := prebookdata.DaoV1.Get(preBookCode)
+	if err != nil {
+		errResp(resp, "failed to get prebookdata err:%s", err)
 	}
-	fmt.Println("req:", giveCurrentReq)
-	bdata := prebookdata.DaoV1.Get(giveCurrentReq.PreBookCode)
 	outputData, err := json.Marshal(bdata)
 	if err != nil {
 		msg := fmt.Sprintf("failed to generate prebook code err:%s", err)
@@ -130,7 +190,7 @@ func giveCurrentHandler(resp http.ResponseWriter, req *http.Request) {
 func handleReceiveRegisterDto(resp http.ResponseWriter, rcvRegReq *dto.ReceiveRegisterRequest) {
 	conn := rediscli.GetConn()
 	defer conn.Close()
-	_, err := conn.Do("GEOADD", cityKey(rcvRegReq.CityID), rcvRegReq.Lat, rcvRegReq.Lng, memberKey(rcvRegReq.UserID))
+	_, err := conn.Do("GEOADD", cityKey(rcvRegReq.CityID), rcvRegReq.Lng, rcvRegReq.Lat, memberKey(rcvRegReq.UserID))
 	if err != nil {
 		msg := fmt.Sprintf("failed to add geo point err:%s", err)
 		errResp(resp, msg)
